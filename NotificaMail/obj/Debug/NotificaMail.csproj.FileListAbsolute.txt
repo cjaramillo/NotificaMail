@@ -1,0 +1,11 @@
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\bin\Debug\NotificaMail.exe.config
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.csprojResolveAssemblyReference.cache
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.Properties.Resources.resources
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.csproj.GenerateResource.Cache
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\bin\Debug\NotificaMail.exe
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\bin\Debug\NotificaMail.pdb
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.exe
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.pdb
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.Principal.resources
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.exe.licenses
+C:\Users\Cesarin\Dropbox\CSharp\NotificaMail\NotificaMail\obj\Debug\NotificaMail.csproj.NotificaMail.exe.config
