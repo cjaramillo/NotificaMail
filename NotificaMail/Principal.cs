@@ -61,6 +61,13 @@ namespace NotificaMail
             InitializeComponent();
         }
 
+        // Cada elemento de este array tiene el número del reporte que se necesita enviar.
+        private List<int> args;
+        public Principal(List<int> args) 
+        {
+            this.args = args;
+            InitializeComponent();
+        }
         
 
         public void enviarAlertas(int handler)
@@ -68,6 +75,19 @@ namespace NotificaMail
             string sqlQuery;
             switch (handler)
             {
+                case -1:
+                    {
+                        /*
+                         * Ejecuto el script desde el modelo para actualizar los anticipos solicitados desde OC.
+                         * PENDIENTE!
+                         * Aquí hay una observación. Desde el SP emito un raiserror en caso de error.. esto no debería ser así porque 
+                         * el modelo no debería interactuar directamente con la vista.. esto será solucionado cuando se integre el barco y las alertas mail
+                         * en una sola aplicación..
+                         * 
+                         * */
+                        sqlQuery =@"exec sp_ActualizaAnticiposOCS";
+                        miClase.EjecutaSql(sqlQuery, false);
+                    } break;
                 case 1:
                     {
                         // Lista de anticipos solicitados desde OC PENDIENTES DE PAGO
@@ -214,6 +234,69 @@ namespace NotificaMail
                             guardaLog("Reporte de Vencimiento de Productos -- No existe Información");
                         }
                     } break;
+                case 8: 
+                    {
+                        /*
+                         * Importaciones Liquidadas. (Artículos de tipo IG desactivados.)
+                         * Si el reporte se ejecuta un Lunes le resta 3 días, si se ejecuta un domingo resta 2 días; para el resto de días siempre restará un solo día.
+                         * 
+                         * OJO: Si hacen alguna liquidación un sábado o un domingo por defecto saldrá el día LUNES.
+                         * Si generan un reporte el Domingo jala la información desde el Viernes.
+                         * Si generan un reporte el Lunes jala la información desde el Viernes
+                         * */
+
+                        sqlQuery = @"
+                            declare @vNroDias int 
+                            set @vNroDias=-1
+                            if (datepart(dw,GETDATE())=1)
+	                            set @vNroDias=-3
+                            if (datepart(dw,GETDATE())=7)
+	                            set @vNroDias=-2
+                            select	count(ArticuloIGDesactivado.id)
+                            from	ArticuloIGDesactivado right outer join (
+                                -- Esta subconsulta devuelve los últimos estados registrados en la tabla ArticuloIGDesactivado según la línea de tiempo.
+                                select MAX(id) as id, idArticulo
+                                from ArticuloIGDesactivado
+                                where Fecha>=DATEADD(day,@vNroDias,getdate())
+                                group by idArticulo
+                            ) filtro on ArticuloIGDesactivado.id=filtro.id
+                            where ArticuloIGDesactivado.descontinuado=1
+                        ";
+                        if (miClase.EjecutaEscalar(sqlQuery) > 0) 
+                        {
+                            generaReporte(handler);
+                            enviaMail(handler);
+                        }
+                        else
+                        {
+                            guardaLog("Importaciones Liquidadas -- No existe Información");
+                        }
+                    } break;
+                case 9:
+                    {
+                        // IBG´s creados en las últimas 24 horas
+                        sqlQuery = @"
+                            declare @vNroDias int 
+                            set @vNroDias=-1
+                            if (datepart(dw,GETDATE())=1)
+	                            set @vNroDias=-3
+                            if (datepart(dw,GETDATE())=7)
+	                            set @vNroDias=-2
+                            Select	COUNT (Compra.idCompra)
+                            FROM    Compra left outer join Cliente on compra.idCliente=Cliente.idCliente
+                            WHERE   (Compra.idTipoFactura = 9) AND (Compra.Numero LIKE 'IBG-%') AND (Compra.FechaIngreso >= DATEADD(day, @vNroDias, GETDATE())) 
+		                            AND Cliente.Nombre like 'PE %'
+                        ";
+                        if (miClase.EjecutaEscalar(sqlQuery) > 0)
+                        {
+                            generaReporte(handler);
+                            enviaMail(handler);
+                        }
+                        else
+                        {
+                            guardaLog("IBG(s) Creados -- No existe Información");
+                        }
+                    } break;
             }
         }
 
@@ -273,7 +356,9 @@ namespace NotificaMail
              * 4= Alertas de Facturas normales pendientes de pago.
              * 5= Reporte de Cruces de Anticipos.
              * 6= Reporte de artículos creados durante la última semana
-             * 7= Reporte de Vencimiento de productos
+             * 7= Reporte de Vencimiento de productos.
+             * 8= Importaciones Liquidadas. (Artículos de tipo IG desactivados.)
+             * 9= IBG´s creados en las últimas 24 horas. PI
              */
             nombreReporte = nombreArchivo = "";
             formateaDiasyMes();
@@ -315,6 +400,17 @@ namespace NotificaMail
                         nombreReporte = "VencimientoProducto.rpt";
                         nombreArchivo = path + @"VencimientoProducto-" + DateTime.Now.Year.ToString() + mes + dia + ".pdf";
                     } break;
+                case 8:
+                    {
+                        nombreReporte = "ImportacionesLiquidadas.rpt";
+                        nombreArchivo = path + @"ImportacionesLiquidadas-" + DateTime.Now.Year.ToString() + mes + dia + ".pdf";
+                    } break;
+                case 9:
+                    {
+                        nombreReporte = "IBGsCreados.rpt";
+                        nombreArchivo = path + @"IBGsCreados-" + DateTime.Now.Year.ToString() + mes + dia + ".pdf";
+                    } break;
+
             }
 
             // Se genera el reporte.
@@ -381,66 +477,103 @@ namespace NotificaMail
             switch (tipo){
                 case 1: 
                     {
+                        
                         msg.To.Add("m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, m_burbano@graphicsource.com.ec, r_ponce@graphicsource.com.ec, l_correa@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Anticipos Pendientes de Pago"; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de anticipos pendientes de pago para su revisión.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
 
                 case 2:
                     {
+                        
                         msg.To.Add("m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Alertas Produccion"; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de las Ordenes de Compra que cumplirán su tiempo de producción.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
 
                 case 3:
                     {
+                        
                         msg.To.Add("m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Alertas de Entrega"; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de los pedidos realizados a Proveedores que cumplirán su tiempo de tránsito.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
                 case 4:
                     {
+                        
                         msg.To.Add("m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, m_burbano@graphicsource.com.ec, l_correa@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Facturas Normales proveedores PE - Pendientes de Pago "; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de las facturas normales de proveedores del exterior por concepto de importaciones que tienen saldos pendientes de pago.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
                 case 5:
                     {
+                        
                         msg.To.Add("m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, m_burbano@graphicsource.com.ec, l_correa@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Reporte de Cruces de Anticipos "; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de los anticipos solicitados, así como también el número de las facturas finales e IG a las cuales se deberán cruzar.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
                 case 6: 
                     {
-                        msg.To.Add(@"m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, p_valenzuela@graphicsource.com.ec, r_cevallos@graphicsource.com.ec, t_rivas@graphicsource.com.ec, k_mejia@graphicsource.com.ec, a_rivas@graphicsource.com.ec, j_pacurucu@graphicsource.com.ec,l_gomez@graphicsource.com.ec, m_rodriguez@graphicsource.com.ec, s_marcatoma@graphicsource.com.ec, silvim2006@hotmail.com,  c_bravo@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
+                        
+                        msg.To.Add(@"m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, p_valenzuela@graphicsource.com.ec, r_cevallos@graphicsource.com.ec, t_rivas@graphicsource.com.ec, k_mejia@graphicsource.com.ec, a_rivas@graphicsource.com.ec, j_pacurucu@graphicsource.com.ec,l_gomez@graphicsource.com.ec, m_rodriguez@graphicsource.com.ec, s_marcatoma@graphicsource.com.ec, silvim2006@hotmail.com,  c_bravo@graphicsource.com.ec, logistica@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Reporte de Artículos creados "; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de los artículos creados durante la última semana.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
                 case 7: 
                     {
-                        msg.To.Add(@"m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, r_cevallos@graphicsource.com.ec, t_rivas@graphicsource.com.ec, c_dolder@graphicsource.com.ec, k_mejia@graphicsource.com.ec, a_rivas@graphicsource.com.ec, j_pacurucu@graphicsource.com.ec, m_rodriguez@graphicsource.com.ec, x_estevez@graphicsource.com.ec"); // para (string)
-                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
+                        
+                        msg.To.Add(@"m_ortiz@graphicsource.com.ec, importaciones@graphicsource.com.ec, r_cevallos@graphicsource.com.ec, t_rivas@graphicsource.com.ec, c_dolder@graphicsource.com.ec, k_mejia@graphicsource.com.ec, a_rivas@graphicsource.com.ec, j_pacurucu@graphicsource.com.ec, m_rodriguez@graphicsource.com.ec, x_estevez@graphicsource.com.ec, logistica@graphicsource.com.ec"); // para (string)
                         msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
                         msg.Subject = "Reporte de Vencimiento de Productos "; // Asunto (string)
                         msg.Body = "Adjunto se remite un listado en detalle de artículos con su fecha de vencimiento.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
+                    } break;
+                case 8:
+                    {
+                        //Importaciones Liquidadas. (Artículos de tipo IG desactivados.)
+                        
+                        msg.To.Add(@"m_ortiz@graphicsource.com.ec, r_cevallos@graphicsource.com.ec, importaciones@graphicsource.com.ec, x_estevez@graphicsource.com.ec"); // para (string)
+                        msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
+                        msg.Subject = "Importaciones Liquidadas "; // Asunto (string)
+                        msg.Body = "Adjunto se remite un listado en detalle de las importaciones que han sido liquidadas en las últimas 24 horas laborables.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
+                    } break;
+                case 9:
+                    {
+                        // IBG´s creados en las últimas 24 horas.
+                        // vendedores
+                        
+                        msg.To.Add(@"m_ortiz@graphicsource.com.ec, r_cevallos@graphicsource.com.ec, importaciones@graphicsource.com.ec, x_estevez@graphicsource.com.ec, l_gomez@graphicsource.com.ec, a_rivas@graphicsource.com.ec, p_valenzuela@graphicsource.com.ec, t_rivas@graphicsource.com.ec, j_pacurucu@graphicsource.com.ec, j_guevara@graphicsource.com.ec, k_mejia@graphicsource.com.ec, soporte@graphicsource.com.ec, s_marcatoma@graphicsource.com.ec, silvim2006@hotmail.com, c_bravo@graphicsource.com.ec,  m_chavez@graphicsource.com.ec, j_soria@graphicsource.com.ec, e_davila@graphicsource.com.ec, g_pacheco@graphicsource.com.ec, j_coello@graphicsource.com.ec, f_vinces@graphicsource.com.ec, h_cardenas@graphicsource.com.ec"); // para (string)
+                        msg.Bcc.Add("c_jaramillo@graphicsource.com.ec, fernando_defaz@graphicsource.com.ec"); // copia oculta (string separado con comas para varios)
+                        
+                        //msg.To.Add("c_jaramillo@graphicsource.com.ec"); // para (string)
+                        msg.Subject = "Nuevos IBG(s) "; // Asunto (string)
+                        msg.Body = "Adjunto se remite un listado en detalle de los ingresos de bodega creados en las últimas 24 horas laborables.\r\n \r\nEste mensaje ha sido generado automáticamente por el sistema, por favor no responda al mismo."; // Cuerpo del mensaje (string)
                     } break;
             }
 
             msg.Priority = MailPriority.High; // Prioridad (propiedad de MailPriority)
-            msg.IsBodyHtml = false; // true si es html, false si es texto
+            msg.IsBodyHtml = false; // true si es html, false si es txt
             msg.Attachments.Add(new Attachment(nombreArchivo));
             SmtpClient clienteSMTP = new SmtpClient("192.168.1.1"); // El servidor de correo
             try
@@ -455,44 +588,65 @@ namespace NotificaMail
             }
         }
 
+
         private void Principal_Load(object sender, EventArgs e)
         {
             System.IO.Directory.CreateDirectory(path);
-            
+            /*
             Datos.strServidor = @"192.168.1.15";
             Datos.strBase = "GraphicSource2007";
             Datos.strReporte = @"\\Servidor\Latinium\Reportes\";
+            */
             
             
-            //Datos.strServidor = @"192.168.1.56";
-            //Datos.strBase = "GraphicSource2007";
-            //Datos.strReporte = @"\\CESAR\Latinium\Reportes\";
+            Datos.strServidor = @"192.168.1.56";
+            Datos.strBase = "GraphicSource2007";
+            Datos.strReporte = @"\\CESAR\Latinium\Reportes\";
             
 
             Datos.strMaquina = miClase.EjecutaEscalarStr("select host_name()");
             Datos.idSucursal = miClase.EjecutaEscalar("Select Top 1 IdSucursal from SucursalGs Where Principal=1");
 
-
-            if ((int)DateTime.Now.DayOfWeek >= 1 && (int)DateTime.Now.DayOfWeek <= 5)
+            /*
+             * Desde aquí administro los reportes que el usuario me pidió y los mando a llamar. En caso de que me pida un reporte que no existe lo ignoro.
+             * Con esto hago escalable la app en caso de que a futuro me pida más reportes con diferentes días.
+             * */
+            List<int> list; 
+            foreach (int nroRep in args) 
             {
-                // Solo se envía de Lunes a Viernes
-                enviarAlertas(1);
-                enviarAlertas(2);
-                enviarAlertas(3);
-                enviarAlertas(4);
-            }
-            
-            if ((int)DateTime.Now.DayOfWeek == 2 || (int)DateTime.Now.DayOfWeek == 4)
-            {
-                // Solo se envía Martes y Jueves
-                enviarAlertas(5);
-            }
-
-            if ((int)DateTime.Now.DayOfWeek == 1 )
-            {
-                // Solo se envía los Lunes
-                enviarAlertas(6);
-                enviarAlertas(7);
+                // Reportes habilitados para envíos de Lunes a Viernes : 1,2,3,4,8,9
+                list= new List<int> { 1, 2, 3, 4, 8, 9 };
+                if (list.Contains(nroRep) && (int)DateTime.Now.DayOfWeek >= 1 && (int)DateTime.Now.DayOfWeek <= 5)
+                {
+                    enviarAlertas(nroRep);
+                }
+                else
+                {
+                    // Reportes habilitados para envíos sólo los Martes y Jueves : 5
+                    list = new List<int> { 5 };
+                    if (list.Contains(nroRep) && ((int)DateTime.Now.DayOfWeek == 2 || (int)DateTime.Now.DayOfWeek == 4))
+                    {
+                        enviarAlertas(nroRep);
+                    }
+                    else
+                    {
+                        // Reportes habilitados para envíos sólo los días Lunes: 6,7
+                        list = new List<int> { 6, 7 };
+                        if (list.Contains(nroRep) && (int)DateTime.Now.DayOfWeek == 1)
+                        {
+                            enviarAlertas(nroRep);
+                        }
+                        else 
+                        {
+                            // Script de actualización de Anticipos solicitados desde OC: Se ejecutará solo lunes, miércoles y viernes. Siempre y cuando se reciba el argumento.
+                            list = new List<int> { -1 };
+                            if (list.Contains(nroRep) && ((int)DateTime.Now.DayOfWeek == 1 || (int)DateTime.Now.DayOfWeek == 3 || (int)DateTime.Now.DayOfWeek == 5))
+                            {
+                                enviarAlertas(nroRep);
+                            }
+                        }
+                    }
+                }
             }
         }
 
