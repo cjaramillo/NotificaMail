@@ -1,0 +1,11 @@
+# Archivos informativos. 
+EnviarMails.xlsx
+mensajeEstadosCta.msg
+
+# Carpetas del IDE:
+NotificaMail/bin/
+NotificaMail/bin/Debug/
+NotificaMail/bin/Release/
+NotificaMail/obj/
+NotificaMail/obj/Debug/
+NotificaMail/obj/Release/

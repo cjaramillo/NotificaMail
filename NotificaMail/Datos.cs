@@ -12,70 +12,99 @@ using System.Data.SqlClient;
 
 namespace NotificaMail
 {
-    public class Datos
+    class Datos : IDisposable
     {
         #region "Variables Datos"
+
         public OleDbConnection cadcon = new OleDbConnection();
+        static public SqlConnection sqlConn = new SqlConnection();
         static public OleDbDataReader odatareader;
         static public OleDbCommand ocomando;
-        public OleDbCommandBuilder oComandoB;
+        //public OleDbCommandBuilder oComandoB;
         public OleDbDataAdapter oadapter;
         public DataSet odataset;
-        public DataSet odatasetAux;
+        public DataSet odatasetAux = null;
         public DataView ogdataview;
         public Boolean CreaTabla = false;
         public double TotalMes = 0;
+
         #endregion
 
         #region "Variables"
+
         static public string strBase;
         static public string strServidor;
         static public string strMaquina;
-        static public bool retencion;
-        static public bool impuesto;
-        static public bool transforma;
-        static public bool CopiaCosto;
-        static public bool InvRegular;
-        static public bool Pago;
-        static public string NumeroOrden;
-        static public int idOrden;
-        static public int idArte;
-        static public int idDisenador;
-        static public int idCliente;
-        static public int idEquipo;
-        static public Double Largo;
-        static public Double Ancho;
-        static public int NroRetazo;
+
+        //static public bool retencion;
+        //static public bool impuesto;
+        //static public bool transforma;
+        //static public bool CopiaCosto;
+        //static public bool InvRegular;
+        //static public bool Pago;
+        //static public string NumeroOrden;
+        //static public int idOrden;
+        //static public int idArte;
+        //static public int idDisenador;
+        //static public int idCliente;
+        //static public int idEquipo;
+        //static public Double Largo;
+        //static public Double Ancho;
+        //static public int NroRetazo;
         static public int idSucursal;
-        static public int idPedido;
-        static public int idCaso;
-        static public bool PuestaPunto;
-        static public bool Acceso;
-        static public bool FiltroPedido;
-        static public bool SelecEquipo;
-        static public bool CambiaEmpresa;
-        static public bool mSuministros;
-        static public bool mProduccion;
-        static public bool mTecnico;
-        static public bool mImportaciones; // Añadido
-        static public string Usuario;
-        static public bool MuestraCaso;
-        static public bool CreaEgreso;
-        static public int idTecnico;
-        static public bool ImprimeIbg;
-        static public bool CopiaDetCaso;
-        static public bool NotaDebito;
-        static public bool CreaCompra;
-        static public bool QuitaProy;
-        static public bool RevisaProy;
-        static public bool AsiSolicitud;
+        //static public int idPedido;
+        //static public int idCaso;
+        //static public bool PuestaPunto;
+        //static public bool Acceso;
+        //static public bool FiltroPedido;
+        //static public bool SelecEquipo;
+        //static public bool CambiaEmpresa;
+        //static public bool mSuministros;
+        //static public bool mProduccion;
+        //static public bool mTecnico;
+        //static public string Usuario;
+        //static public bool MuestraCaso;
+        //static public bool CreaEgreso;
+        //static public int idTecnico;
+        //static public bool ImprimeIbg;
+        //static public bool CopiaDetCaso;
+        //static public bool NotaDebito;
+        //static public bool CreaCompra;
+        //static public bool QuitaProy;
+        //static public bool RevisaProy;
+        //static public bool AsiSolicitud;
         static public int idTipoFactura;
-        static public int idContrato;
+        //static public int idContrato;
+        static public string strReporte;
 
         #endregion
 
 
-        static public string strReporte;
+        // Flag: Has Dispose already been called? 
+        bool disposed = false;
+
+        // Public implementation of Dispose pattern callable by consumers. 
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        // Protected implementation of Dispose pattern. 
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposed)
+                return;
+            if (disposing)
+            {
+                // Free any other managed objects here. 
+                //
+            }
+
+            // Free any unmanaged objects here. 
+            //
+            disposed = true;
+        }
 
         public void Conectar()
         {
@@ -85,15 +114,15 @@ namespace NotificaMail
                 + "Initial Catalog=" + Datos.strBase + ";Use Procedure for Prepare=1;"
                 + "Provider=SQLOLEDB.1;Persist Security Info=True;"//Workstation ID=Local;"
                 + "Use Encryption for Data=False;Packet Size=4096";
-        }
 
+            sqlConn.ConnectionString = "Data Source=" + Datos.strServidor + ";Initial Catalog=" + Datos.strBase + ";User ID=fer;Password=05043001";
+        }
 
         public string ConectarAdaptador()
         {
             Conectar();
             return cadcon.ConnectionString.ToString();
         }
-
 
         public void LlenaLista(CheckedListBox Lista, string mitabla, string member, string valor, string filtro, bool Bloquear)
         {
@@ -171,6 +200,7 @@ namespace NotificaMail
         }
 
         //Modifico la Funcion LLena Combo para mostrar n cantidad de registros Ordenados Descendentemente
+
         public void LlenaCombo(ComboBox combo, string mitabla, string member, string valor, string filtro, bool Bloquear, string nRegistros)
         {
             if (Bloquear == true) combo.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
@@ -209,6 +239,31 @@ namespace NotificaMail
             }
         }
 
+
+        public String resultConcatenado(string sqlQuery)
+        {
+            DataSet ds = new DataSet();
+            String retorno = "";
+            llenaDS(ds, "select * from (" + sqlQuery + ") p", "p");
+            for (int i = 0; i < ds.Tables[0].Rows.Count; i++)
+            {
+                retorno += ds.Tables[0].Rows[i].ItemArray[0].ToString();
+                if (i + 1 < ds.Tables[0].Rows.Count)
+                    retorno += ", ";
+            }
+            return retorno;
+        }
+
+        public void llenaDS(DataSet ds, string sqlQuery, string tabla)
+        {
+            Conectar();
+            if (sqlConn.State == ConnectionState.Closed)
+                sqlConn.Open();
+            new SqlDataAdapter(sqlQuery, sqlConn).Fill(ds, tabla);
+            sqlConn.Close();
+        }
+
+
         public void EjecutaSql(string cadsql, Boolean bMenConf)
         {
             Conectar();
@@ -227,10 +282,10 @@ namespace NotificaMail
             finally
             {
                 //El Bloque Finally Cierra la Conexion si la exepcion fue o no fue Lanzada
-                
                 cadcon.Close();
             }
         }
+
 
         public bool EjecutaSqlBool(string cadsql)
         {
@@ -346,7 +401,78 @@ namespace NotificaMail
         }
 
 
-        public void LlenaGrid(DataGrid grilla, string mitabla, string comandosql)
+        public int[] EjecutaEscalarArray(string cadsql)
+        {
+            DataSet ds = new DataSet();
+            DataRow dr;
+            SqlDataAdapter sqlda = new SqlDataAdapter();
+            int[] array = new int[100];
+            int idCompra = 0;
+            if (EjecutaEscalar("select COUNT(*) from (" + cadsql + ") a") > 0)
+            {
+                sqlda.SelectCommand = new SqlCommand(cadsql, Datos.sqlConn);
+                sqlda.Fill(ds, "tabla");
+                ds.Tables["tabla"].Rows[0].ToString();
+                if (ds.Tables["tabla"].Rows.Count > 0)
+                {
+                    for (int i = 0; i < ds.Tables["tabla"].Rows.Count; i++)
+                    {
+                        dr = ds.Tables["tabla"].Rows[i];
+                        //idCompra = Int32.Parse(dr["idCompra"].ToString()); // no manejo excepción. de la integridad de los datos se encarga el sgbd
+                        idCompra = Int32.Parse(dr[0].ToString()); // no manejo excepción. de la integridad de los datos se encarga el sgbd
+                        array[i] = idCompra;
+                    }
+                }
+            }
+            else
+            {
+                // No hay ningún PP asociado a este IBG
+                array[0] = -1;
+            }
+            return array;
+        }
+
+
+        public string EjecutaSP(string nombreSP, string[,] parametrosIn, string parametroOut, SqlDbType tipoRetorno)
+        {
+            // Permite ejecutar un SP y retorna un object con el tipo de dato de retorno.
+            // Siempre se asume que las matrices tienen 2 columnas y n filas.
+            using (SqlCommand sqlc = new SqlCommand("sp_RespaldosIBG", sqlConn))
+            {
+                Conectar();
+                try
+                {
+                    sqlc.CommandType = CommandType.StoredProcedure;
+                    //Cargamos parametros de entrada
+                    for (int i = 0; i < (parametrosIn.Length / 2); i++)
+                    {
+                        sqlc.Parameters.AddWithValue(parametrosIn[i, 0], parametrosIn[i, 1]);
+                    }
+                    //Cargamos parámetro de salida
+                    SqlParameter paramOut = new SqlParameter(parametroOut, tipoRetorno);
+                    paramOut.Direction = ParameterDirection.Output;
+                    sqlc.Parameters.Add(paramOut);
+                    if (sqlc.Connection.State == ConnectionState.Closed) sqlc.Connection.Open();
+                    sqlc.ExecuteNonQuery();
+                    string retorno = sqlc.Parameters[parametroOut].Value.ToString();
+                    sqlc.Connection.Close();
+                    return retorno;
+                }
+                catch (System.Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Mensaje", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                finally
+                {
+                    //El Bloque Finally Cierra la Conexion si la exepcion fue o no fue Lanzada
+                    sqlc.Connection.Close();
+                }
+            }
+            //sqlc.Connection.Close();
+            return "-99";
+        }
+
+        public void LlenaGrid(DataGridView grilla, string mitabla, string comandosql)
         {
             Conectar();
             try
@@ -377,7 +503,6 @@ namespace NotificaMail
             }
 
         }
-
 
         public void LlenaGridAux(DataGrid grilla, string mitabla, string comandosql)
         {
@@ -553,6 +678,7 @@ namespace NotificaMail
 
             return Filtro;
         }
-
     }
+
+    
 }
